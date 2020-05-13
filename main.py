@@ -115,7 +115,6 @@ def main():
   delete_state_files()
 
   items = load_items(signalfx_export_path)
-  # this is hardcoded and will not work all the time
   dashboard = list(filter(lambda i: i.get('sf_type') == 'Dashboard', items))[0]
   charts = list(filter(lambda i: i.get('sf_type') == 'Chart', items))
 
