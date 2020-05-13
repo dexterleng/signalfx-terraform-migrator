@@ -2,6 +2,8 @@ import json
 import subprocess
 import re
 
+signalfx_export_path = './kcp_ingestion_dashboard.json'
+
 def load_items(path):
   file = open(path, 'r')
   result = json.load(file)
@@ -112,7 +114,7 @@ def write_item_state_to_file(item, f, resource_type_id_by_signalfx_id_map):
 def main():
   delete_state_files()
 
-  items = load_items('./kcp_ingestion_dashboard.json')
+  items = load_items(signalfx_export_path)
   # this is hardcoded and will not work all the time
   dashboard = list(filter(lambda i: i.get('sf_type') == 'Dashboard', items))[0]
   charts = list(filter(lambda i: i.get('sf_type') == 'Chart', items))
