@@ -102,10 +102,15 @@ def write_item_state_to_file(item, f, resource_type_id_by_signalfx_id_map):
   ansi_escape = re.compile(r'(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]')
   remove_id_attr = re.compile(r'^ *id *=.*$\n', re.MULTILINE)
   remove_url_attr = re.compile(r'^ *url *=.*$\n', re.MULTILINE)
+  eot_start = re.compile(r'<<~EOT', re.MULTILINE)
+  eot_end = re.compile(r'EOT', re.MULTILINE)
 
   o = show_state_of_item(item)
   o = ansi_escape.sub('', o)
   o = remove_id_attr.sub('', o)
+  o = remove_url_attr.sub('', o)
+  o = eot_start.sub('<<-EOF', o)
+  o = eot_end.sub('EOF', o)
   o = replace_signalfx_id_with_terraform_identifier(o, resource_type_id_by_signalfx_id_map)
 
   f.write(o)
