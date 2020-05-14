@@ -2,7 +2,7 @@ import json
 import subprocess
 import re
 
-signalfx_export_path = './kcp_ingestion_dashboard.json'
+signalfx_export_path = './cms_summary.json'
 
 def load_items(path):
   file = open(path, 'r')
@@ -14,7 +14,13 @@ def assert_item_type(item, _type):
   assert item['sf_type'] == _type
 
 def idify_name(name):
-  return name.lower().strip().replace(' ', '_').replace('(', '').replace(')', '')
+  return name.lower().strip() \
+    .replace(' ', '_') \
+    .replace('[', '_') \
+    .replace(']', '_') \
+    .replace('-', '_') \
+    .replace('(', '')  \
+    .replace(')', '')
 
 def map_chart_to_resource_type(chart):
   chart_type = chart['sf_visualizationOptions']['type']
@@ -22,6 +28,8 @@ def map_chart_to_resource_type(chart):
   table = {
     'SingleValue': 'signalfx_single_value_chart',
     'TimeSeriesChart': 'signalfx_time_chart',
+    'Heatmap': 'signalfx_heatmap_chart',
+    'List': 'signalfx_list_chart'
   }
   return table[chart_type]
 
@@ -79,9 +87,57 @@ variable "signalfx_api_url" {
         boilerplate_for_item(chart)
       )
 
-def import_item_state_from_terraform(item):
-  p = subprocess.run(f"terraform import {item['_resource_type_id']} {item['_id']}", shell=True, stderr=subprocess.PIPE)
-  print(p.stderr.decode())
+def import_item_state_from_terraform_thunk(item):
+  return lambda _: subprocess.Popen(['terraform', 'import', item['_resource_type_id'], item['_id']], stderr=subprocess.PIPE)
+
+def import_item_states(items, max_tries):
+  # (item, process, nth_attempt)
+  import_state_jobs = []
+  for item in items:
+    import_state_jobs.append((item, import_item_state_from_terraform_thunk(item), 1))
+
+  while len(import_state_jobs) > 0:
+    new_import_state_jobs = []
+    for item, process_thunk, nth_attempt in import_state_jobs:
+      process = process_thunk(None)
+      process.wait()
+      
+      stderr = process.stderr.read()
+      failed = len(stderr) > 0
+      if failed:
+        print(stderr)
+        if nth_attempt >= max_tries:
+          raise Exception(f"Error importing state of item {item['_resource_type_id']} from ID {item['_id']}")
+        print(f"Failed to import state of item {item['_resource_type_id']} from ID {item['_id']}, retrying...")
+        new_import_state_jobs.append((item, import_item_state_from_terraform_thunk(item), nth_attempt + 1))
+        continue
+
+      print(f"Successfully imported state of item {item['_resource_type_id']} from ID {item['_id']}")
+
+    import_state_jobs = new_import_state_jobs
+
+  # while len(import_state_jobs) > 0:
+  #   new_import_state_jobs = []
+  #   for item, process, nth_attempt in import_state_jobs:
+  #     if process.poll() is None:
+  #       new_import_state_jobs.append((item, process, nth_attempt))
+  #       continue
+      
+  #     stderr = process.stderr.read()
+  #     failed = len(stderr) > 0
+  #     if failed:
+  #       print(stderr)
+  #       if nth_attempt >= max_tries:
+  #         raise Exception(f"Error importing state of item {item['_resource_type_id']} from ID {item['_id']}")
+  #       print(f"Failed to import state of item {item['_resource_type_id']} from ID {item['_id']}, retrying...")
+  #       new_import_state_jobs.append((item, process, nth_attempt + 1))
+  #       continue
+      
+  #     print(f"Successfully imported state of item {item['_resource_type_id']} from ID {item['_id']}")
+
+  #   import_state_jobs = new_import_state_jobs
+
+  
 
 def show_state_of_item(item):
   p = subprocess.run(f"terraform state show {item['_resource_type_id']}", shell=True, stdout=subprocess.PIPE)
@@ -147,9 +203,7 @@ def main():
   subprocess.call(['terraform', 'init'])
 
   # import dashboard and chart state
-  import_item_state_from_terraform(dashboard)
-  for chart in charts:
-    import_item_state_from_terraform(chart)
+  import_item_states([dashboard] + charts, 3)
 
   # build map of signalfx id -> resource type . resource name
   resource_type_id_by_signalfx_id_map = {}
