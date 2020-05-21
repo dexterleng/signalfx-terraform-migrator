@@ -88,7 +88,7 @@ variable "signalfx_api_url" {
       )
 
 def import_item_state_from_terraform_thunk(item):
-  return lambda _: subprocess.Popen(['terraform', 'import', item['_resource_type_id'], item['_id']], stderr=subprocess.PIPE)
+  return lambda _: subprocess.Popen(['terraform', 'import', '-no-color', item['_resource_type_id'], item['_id']], stderr=subprocess.PIPE)
 
 def import_item_states(items, max_tries):
   # (item, process, nth_attempt)
