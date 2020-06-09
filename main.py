@@ -2,7 +2,7 @@ import json
 import subprocess
 import re
 
-signalfx_export_path = './cms_summary.json'
+signalfx_export_path = './kcp_group.json'
 
 def load_items(path):
   file = open(path, 'r')
@@ -14,13 +14,10 @@ def assert_item_type(item, _type):
   assert item['sf_type'] == _type
 
 def idify_name(name):
-  return name.lower().strip() \
-    .replace(' ', '_') \
-    .replace('[', '_') \
-    .replace(']', '_') \
-    .replace('-', '_') \
-    .replace('(', '')  \
-    .replace(')', '')
+  o = name.lower().strip()
+  o = re.sub("[^0-9a-zA-Z]+", "", o)
+  return o
+
 
 def map_chart_to_resource_type(chart):
   chart_type = chart['sf_visualizationOptions']['type']
@@ -29,15 +26,15 @@ def map_chart_to_resource_type(chart):
     'SingleValue': 'signalfx_single_value_chart',
     'TimeSeriesChart': 'signalfx_time_chart',
     'Heatmap': 'signalfx_heatmap_chart',
-    'List': 'signalfx_list_chart'
+    'List': 'signalfx_list_chart',
+    'Text': 'signalfx_text_chart'
   }
   return table[chart_type]
 
-def insert_dashboard_attributes(dashboard, any_chart):
+def insert_dashboard_attributes(dashboard):
   dashboard['_resource_type'] = 'signalfx_dashboard'
   dashboard['_resource_id'] = idify_name(dashboard['sf_dashboard'])
   dashboard['_resource_type_id'] = f"{dashboard['_resource_type']}.{dashboard['_resource_id']}"
-  dashboard['_id'] = any_chart['sf_dashboardId']
 
 def insert_chart_attributes(chart, resource_id, dashboard):
   chart['_resource_type'] = map_chart_to_resource_type(chart)
@@ -50,7 +47,6 @@ def insert_chart_attributes(chart, resource_id, dashboard):
   chart_id = associated_dashboard_widget['options']['chartId']
   chart["_id"] = chart_id
 
-
 def boilerplate_for_item(item):
   # double curly escapes for f-strings https://stackoverflow.com/a/42521252/10390454
   return f"""
@@ -58,7 +54,7 @@ resource "{item['_resource_type']}" "{item['_resource_id']}" {{
 }}
 """
 
-def create_boilerplate_for_terraform_import(dashboard, charts, out):
+def create_boilerplate_for_terraform_import(items, out):
   with open(out, 'w') as boilerplate_file:
     boilerplate_file.write(
 """
@@ -77,14 +73,9 @@ variable "signalfx_api_url" {
 
 """
 )
-
-    boilerplate_file.write(
-      boilerplate_for_item(dashboard)
-    )
-
-    for chart in charts:
+    for item in items:
       boilerplate_file.write(
-        boilerplate_for_item(chart)
+        boilerplate_for_item(item)
       )
 
 def import_item_state_from_terraform_thunk(item):
@@ -140,7 +131,9 @@ def import_item_states(items, max_tries):
   
 
 def show_state_of_item(item):
-  p = subprocess.run(f"terraform state show {item['_resource_type_id']}", shell=True, stdout=subprocess.PIPE)
+  cmd = f"terraform state show {item['_resource_type_id']}"
+  print(f"[command] {cmd}")
+  p = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE)
   return p.stdout.decode()
 
 def delete_state_files():
@@ -148,13 +141,13 @@ def delete_state_files():
   subprocess.call(['rm', '-f', 'terraform.tfstate'])
   subprocess.call(['rm', '-rf', 'terraform.tfstate.backup'])
 
-def replace_signalfx_id_with_terraform_identifier(string, resource_type_id_by_signalfx_id_map):
-  for sf_id in resource_type_id_by_signalfx_id_map:
-    resource_type_id = resource_type_id_by_signalfx_id_map[sf_id]
-    string = string.replace(f'"{sf_id}"', f'{resource_type_id}.id')
+def replace_signalfx_id_with_terraform_identifier(string, item):
+  sf_id = item['_id']
+  resource_type_id = item['_resource_type_id']
+  string = string.replace(f'"{sf_id}"', f'{resource_type_id}.id')
   return string
 
-def write_item_state_to_file(item, f, resource_type_id_by_signalfx_id_map):
+def write_item_state_to_file(item, f):
   ansi_escape = re.compile(r'(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]')
   remove_id_attr = re.compile(r'^ *id *=.*$\n', re.MULTILINE)
   remove_url_attr = re.compile(r'^ *url *=.*$\n', re.MULTILINE)
@@ -167,62 +160,82 @@ def write_item_state_to_file(item, f, resource_type_id_by_signalfx_id_map):
   o = remove_url_attr.sub('', o)
   o = eot_start.sub('<<-EOF', o)
   o = eot_end.sub('EOF', o)
-  o = replace_signalfx_id_with_terraform_identifier(o, resource_type_id_by_signalfx_id_map)
+  o = replace_signalfx_id_with_terraform_identifier(o, item)
 
   f.write(o)
   f.write('\n')
 
+def build_mid_to_children_map(items):
+  id_to_children_map = {}
+  
+  for i in range(len(items)):
+    item = items[i]
+    parent_id = item["marshallMemberOf"][0]
+  
+    if parent_id not in id_to_children_map:
+      id_to_children_map[parent_id] = []
+    
+    id_to_children_map[parent_id].append(item)
+
+  return id_to_children_map
+
 def main():
   delete_state_files()
 
-  items = load_items(signalfx_export_path)
-  dashboard = list(filter(lambda i: i.get('sf_type') == 'Dashboard', items))[0]
+  items = list(filter(lambda i: 'sf_type' in i and i['sf_type'] in ['Page', 'Dashboard', 'Chart'] , load_items(signalfx_export_path)))
+
+  dashboard_group = list(filter(lambda i: i.get('sf_type') == 'Page', items))[0]
+  dashboards = list(filter(lambda i: i.get('sf_type') == 'Dashboard', items))
   charts = list(filter(lambda i: i.get('sf_type') == 'Chart', items))
 
-  # insert dashboard attributes
-  insert_dashboard_attributes(dashboard, charts[0])
+  marshall_id_to_children_map = build_mid_to_children_map(dashboards + charts)
 
-  # insert chart attributes
+  # set dashboard attributes
+  for dashboard in dashboards:
+    dashboard_mid = dashboard['marshallId']
+    one_chart = marshall_id_to_children_map[dashboard_mid][0]
+
+    dashboard_id = one_chart['sf_dashboardId']
+    dashboard['_id'] = dashboard_id
+
+    insert_dashboard_attributes(dashboard)
+
+  # set chart attributes
   chart_resource_id_count = {}
-  for chart in charts:
-    # prevent chart id collision by adding _{nth_appearance} suffix to resource_id
-    chart_name = idify_name(chart['sf_chart'])
-    if chart_name not in chart_resource_id_count:
-      chart_resource_id_count[chart_name] = 0
-    chart_resource_id_count[chart_name] += 1
+  for dashboard in dashboards:
+    dashboard_mid = dashboard['marshallId']
 
-    chart_resource_id = f'{chart_name}_{chart_resource_id_count[chart_name]}'
-    if chart_resource_id_count[chart_name] == 1:
-      chart_resource_id = chart_name
+    for chart in marshall_id_to_children_map[dashboard_mid]:
+      # prevent chart id collision by adding _{nth_appearance} suffix to resource_id
+      chart_name = idify_name(chart['sf_chart'])
+      if chart_name not in chart_resource_id_count:
+        chart_resource_id_count[chart_name] = 0
+      chart_resource_id_count[chart_name] += 1
 
-    insert_chart_attributes(chart, chart_resource_id, dashboard)
+      chart_resource_id = f'{chart_name}_{chart_resource_id_count[chart_name]}'
+      if chart_resource_id_count[chart_name] == 1:
+        chart_resource_id = chart_name 
+
+      insert_chart_attributes(chart, chart_resource_id, dashboard)
 
   # create boilerplate file that is required to run `terraform import`
-  create_boilerplate_for_terraform_import(dashboard, charts, './boilerplate.tf')
+  create_boilerplate_for_terraform_import(dashboards + charts, './boilerplate.tf')
 
   subprocess.call(['terraform', 'init'])
 
-  # import dashboard and chart state
-  import_item_states([dashboard] + charts, 3)
-
-  # build map of signalfx id -> resource type . resource name
-  resource_type_id_by_signalfx_id_map = {}
-  resource_type_id_by_signalfx_id_map[dashboard['_id']] = dashboard['_resource_type_id']
-  for chart in charts:
-    resource_type_id_by_signalfx_id_map[chart['_id']] = chart['_resource_type_id']
+  # import dashboards and chart state
+  import_item_states(dashboards + charts, 3)
 
   # write state config to file
   subprocess.run(['mkdir', '-p', 'output/'])
   with open('output/output.tf', 'w') as output_file:
-    write_item_state_to_file(dashboard, output_file, resource_type_id_by_signalfx_id_map)  
-    for chart in charts:
-      write_item_state_to_file(chart, output_file, resource_type_id_by_signalfx_id_map)
-  
-  # map_json = json.dumps(resource_type_id_by_signalfx_id_map)
-  # with open('output/id_map.json', 'w') as output_file:
-  #   output_file.write(map_json)
+    for dashboard in dashboards:
+      dashboard_mid = dashboard['marshallId']
+      charts = marshall_id_to_children_map[dashboard_mid]
+      write_item_state_to_file(dashboard, output_file)  
+      for chart in charts:
+        write_item_state_to_file(chart, output_file)
 
-  # delete state file to prevent someone from accidentally deploying this
   delete_state_files()
 
 main()
