@@ -3,6 +3,7 @@ import subprocess
 import re
 
 signalfx_export_path = './kcp_group.json'
+DASHBOARD_GROUP_NAME='kcp_group'
 
 def load_items(path):
   file = open(path, 'r')
@@ -19,7 +20,6 @@ def idify_name(name):
 
   if o[0].isdigit():
     o = "_" + o
-
   return o
 
 
@@ -39,6 +39,7 @@ def insert_dashboard_attributes(dashboard):
   dashboard['_resource_type'] = 'signalfx_dashboard'
   dashboard['_resource_id'] = idify_name(dashboard['sf_dashboard'])
   dashboard['_resource_type_id'] = f"{dashboard['_resource_type']}.{dashboard['_resource_id']}"
+  dashboard['_file_name'] = f"{DASHBOARD_GROUP_NAME}_dashboard_group_{dashboard['_resource_id']}_dashboard"
 
 def insert_chart_attributes(chart, resource_id, dashboard):
   chart['_resource_type'] = map_chart_to_resource_type(chart)
@@ -214,7 +215,7 @@ def main():
 
     for chart in marshall_id_to_children_map[dashboard_mid]:
       # prevent chart id collision by adding _{nth_appearance} suffix to resource_id
-      chart_name = idify_name(chart['sf_chart'])
+      chart_name = idify_name(f"{DASHBOARD_GROUP_NAME}_dashboard_group_{dashboard['_resource_id']}_dashboard_{chart['sf_chart']}")
       if chart_name not in chart_resource_id_count:
         chart_resource_id_count[chart_name] = 0
       chart_resource_id_count[chart_name] += 1
@@ -241,7 +242,7 @@ def main():
     dashboard_mid = dashboard['marshallId']
     charts = marshall_id_to_children_map[dashboard_mid]
 
-    with open(f'output/{i}.tf', 'w') as output_file:
+    with open(f"output/{dashboard['_file_name']}.tf", 'w') as output_file:
       write_item_state_to_file(dashboard, charts, output_file)
       for chart in charts:
         # no need to replace non-exist chart_id attribute
