@@ -163,6 +163,11 @@ def replace_chart_id_with_terraform_identifier(string, item, charts):
     string = string.replace(f'"{chart_id}"', f'{chart_resource_type_id}.id')
   return string
 
+def replace_group_id_with_terraform_id(state_show_output, dashboard, group):
+  group_id = group['_id']
+  group_resource_type_id = group['_resource_type_id']
+  return state_show_output.replace(f'"{group_id}"', f'{group_resource_type_id}.id')
+
 def transform_state_show(state_show_output):
   ansi_escape = re.compile(r'(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]')
   remove_id_attr = re.compile(r'^ *id *=.*$\n', re.MULTILINE)
@@ -181,16 +186,17 @@ def transform_state_show(state_show_output):
 
   return o
 
-def write_chart_to_file(chart, file):
+def write_chart_to_file(chart, f):
   state_show_output = show_state_of_item(chart)  
   state_show_output = transform_state_show(state_show_output)
   f.write(state_show_output)
   f.write('\n')
 
-def write_dashboard_to_file(dashboard, charts, f):
+def write_dashboard_to_file(dashboard, group, charts, f):
   state_show_output = show_state_of_item(dashboard)  
   state_show_output = transform_state_show(state_show_output)
   state_show_output = replace_chart_id_with_terraform_identifier(state_show_output, dashboard, charts)
+  state_show_output = replace_group_id_with_terraform_id(state_show_output, dashboard, group)
 
   f.write(state_show_output)
   f.write('\n')
@@ -280,7 +286,7 @@ def main():
     charts = marshall_id_to_children_map[dashboard_mid]
 
     with open(f"{DASHBOARD_GROUP_NAME}/{dashboard['_file_name']}.tf", 'w') as output_file:
-      write_dashboard_to_file(dashboard, charts, output_file)
+      write_dashboard_to_file(dashboard, dashboard_group, charts, output_file)
       for chart in charts:
         # no need to replace non-exist chart_id attribute
         write_chart_to_file(chart, output_file)
