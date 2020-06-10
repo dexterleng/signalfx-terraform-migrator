@@ -2,7 +2,7 @@ import json
 import subprocess
 import re
 
-signalfx_export_path = './kcp_group.json'
+signalfx_export_path = './internal_tools.json'
 
 def load_items(path):
   file = open(path, 'r')
@@ -15,7 +15,7 @@ def assert_item_type(item, _type):
 
 def idify_name(name):
   o = name.lower().strip()
-  o = re.sub("[^0-9a-zA-Z]+", "", o)
+  o = re.sub("[^0-9a-zA-Z]+", "_", o)
   return o
 
 
