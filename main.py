@@ -2,8 +2,8 @@ import json
 import subprocess
 import re
 
-signalfx_export_path = './kcp_group.json'
-DASHBOARD_GROUP_NAME='kcp_group'
+signalfx_export_path = './internal_tools.json'
+DASHBOARD_GROUP_NAME='internal_tools'
 
 def load_items(path):
   file = open(path, 'r')
@@ -16,7 +16,7 @@ def assert_item_type(item, _type):
 
 def idify_name(name):
   o = name.lower().strip()
-  o = re.sub("[^0-9a-zA-Z]+", "_", o)
+  o = re.sub("[^0-9a-zA-Z-_]+", "_", o)
 
   if o[0].isdigit():
     o = "_" + o
@@ -37,9 +37,9 @@ def map_chart_to_resource_type(chart):
 
 def insert_dashboard_attributes(dashboard):
   dashboard['_resource_type'] = 'signalfx_dashboard'
-  dashboard['_resource_id'] = idify_name(dashboard['sf_dashboard'])
+  dashboard['_resource_id'] = idify_name(f"{DASHBOARD_GROUP_NAME}--{dashboard['sf_dashboard']}")
   dashboard['_resource_type_id'] = f"{dashboard['_resource_type']}.{dashboard['_resource_id']}"
-  dashboard['_file_name'] = f"{DASHBOARD_GROUP_NAME}_dashboard_group_{dashboard['_resource_id']}_dashboard"
+  dashboard['_file_name'] = idify_name(f"{DASHBOARD_GROUP_NAME}_dashboard_group_{dashboard['sf_dashboard']}_dashboard")
 
 def insert_chart_attributes(chart, resource_id, dashboard):
   chart['_resource_type'] = map_chart_to_resource_type(chart)
@@ -215,7 +215,7 @@ def main():
 
     for chart in marshall_id_to_children_map[dashboard_mid]:
       # prevent chart id collision by adding _{nth_appearance} suffix to resource_id
-      chart_name = idify_name(f"{DASHBOARD_GROUP_NAME}_dashboard_group_{dashboard['_resource_id']}_dashboard_{chart['sf_chart']}")
+      chart_name = idify_name(f"{dashboard['_resource_id']}--{chart['sf_chart']}")
       if chart_name not in chart_resource_id_count:
         chart_resource_id_count[chart_name] = 0
       chart_resource_id_count[chart_name] += 1
@@ -235,14 +235,14 @@ def main():
   import_item_states(all_dashboards + all_charts, 3)
 
   # write state config to file
-  subprocess.run(['mkdir', '-p', 'output/'])
+  subprocess.run(['mkdir', '-p', f'{DASHBOARD_GROUP_NAME}/'])
 
   for i in range(len(all_dashboards)):
     dashboard = all_dashboards[i]
     dashboard_mid = dashboard['marshallId']
     charts = marshall_id_to_children_map[dashboard_mid]
 
-    with open(f"output/{dashboard['_file_name']}.tf", 'w') as output_file:
+    with open(f"{DASHBOARD_GROUP_NAME}/{dashboard['_file_name']}.tf", 'w') as output_file:
       write_item_state_to_file(dashboard, charts, output_file)
       for chart in charts:
         # no need to replace non-exist chart_id attribute
