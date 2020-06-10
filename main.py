@@ -4,6 +4,7 @@ import re
 
 signalfx_export_path = './internal_tools.json'
 DASHBOARD_GROUP_NAME='internal_tools'
+DB_GROUP_ID = 'C_X_h_xAcAA'
 
 def load_items(path):
   file = open(path, 'r')
@@ -37,6 +38,12 @@ def map_chart_to_resource_type(chart):
     'Text': 'signalfx_text_chart'
   }
   return table[chart_type]
+
+def insert_dashboard_group_attributes(dashboard_group):
+  dashboard_group['_resource_type'] = 'signalfx_dashboard_group'
+  dashboard_group['_resource_id'] = DASHBOARD_GROUP_NAME
+  dashboard_group['_resource_type_id'] = f"{dashboard_group['_resource_type']}.{dashboard_group['_resource_id']}"
+  dashboard_group['_file_name'] = f"{DASHBOARD_GROUP_NAME}_dashboard_group"
 
 def insert_dashboard_attributes(dashboard):
   dashboard['_resource_type'] = 'signalfx_dashboard'
@@ -156,7 +163,7 @@ def replace_chart_id_with_terraform_identifier(string, item, charts):
     string = string.replace(f'"{chart_id}"', f'{chart_resource_type_id}.id')
   return string
 
-def write_item_state_to_file(item, charts, f):
+def transform_state_show(state_show_output):
   ansi_escape = re.compile(r'(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]')
   remove_id_attr = re.compile(r'^ *id *=.*$\n', re.MULTILINE)
   remove_url_attr = re.compile(r'^ *url *=.*$\n', re.MULTILINE)
@@ -164,17 +171,38 @@ def write_item_state_to_file(item, charts, f):
   eot_end = re.compile(r'EOT', re.MULTILINE)
   remove_comment = re.compile(r'^# .*$\n', re.MULTILINE)
 
-  o = show_state_of_item(item)
+  o = state_show_output
   o = ansi_escape.sub('', o)
   o = remove_id_attr.sub('', o)
   o = remove_url_attr.sub('', o)
   o = eot_start.sub('<<-EOF', o)
   o = eot_end.sub('EOF', o)
   o = remove_comment.sub('', o)
-  o = replace_chart_id_with_terraform_identifier(o, item, charts)
 
-  f.write(o)
+  return o
+
+def write_chart_to_file(chart, file):
+  state_show_output = show_state_of_item(chart)  
+  state_show_output = transform_state_show(state_show_output)
+  f.write(state_show_output)
   f.write('\n')
+
+def write_dashboard_to_file(dashboard, charts, f):
+  state_show_output = show_state_of_item(dashboard)  
+  state_show_output = transform_state_show(state_show_output)
+  state_show_output = replace_chart_id_with_terraform_identifier(state_show_output, dashboard, charts)
+
+  f.write(state_show_output)
+  f.write('\n')
+
+def write_dashboard_group_to_file(dashboard_group, f):
+  state_show_output = show_state_of_item(dashboard_group)
+  state_show_output = transform_state_show(state_show_output)
+
+  f.write(state_show_output)
+  f.write('\n')
+
+
 
 def build_mid_to_children_map(items):
   id_to_children_map = {}
@@ -199,9 +227,10 @@ def main():
   all_dashboards = list(filter(lambda i: i.get('sf_type') == 'Dashboard', items))
   all_charts = list(filter(lambda i: i.get('sf_type') == 'Chart', items))
 
-  marshall_id_to_children_map = build_mid_to_children_map(all_dashboards + all_charts)
+  marshall_id_to_children_map = build_mid_to_children_map([dashboard_group] + all_dashboards + all_charts)
 
   insert_dashboard_group_attributes(dashboard_group)
+  dashboard_group['_id'] = DB_GROUP_ID
 
   # set dashboard attributes
   for dashboard in all_dashboards:
@@ -232,15 +261,18 @@ def main():
       insert_chart_attributes(chart, chart_resource_id, dashboard)
 
   # create boilerplate file that is required to run `terraform import`
-  create_boilerplate_for_terraform_import(all_dashboards + all_charts, './boilerplate.tf')
+  create_boilerplate_for_terraform_import([dashboard_group] + all_dashboards + all_charts, './boilerplate.tf')
 
   subprocess.call(['terraform', 'init'])
 
   # import dashboards and chart state
-  import_item_states(all_dashboards + all_charts, 3)
+  import_item_states([dashboard_group] + all_dashboards + all_charts, 3)
 
   # write state config to file
   subprocess.run(['mkdir', '-p', f'{DASHBOARD_GROUP_NAME}/'])
+
+  with open(f"{DASHBOARD_GROUP_NAME}/{dashboard_group['_file_name']}.tf", 'w') as output_file:
+    write_dashboard_group_to_file(dashboard_group, output_file)
 
   for i in range(len(all_dashboards)):
     dashboard = all_dashboards[i]
@@ -248,10 +280,10 @@ def main():
     charts = marshall_id_to_children_map[dashboard_mid]
 
     with open(f"{DASHBOARD_GROUP_NAME}/{dashboard['_file_name']}.tf", 'w') as output_file:
-      write_item_state_to_file(dashboard, charts, output_file)
+      write_dashboard_to_file(dashboard, charts, output_file)
       for chart in charts:
         # no need to replace non-exist chart_id attribute
-        write_item_state_to_file(chart, [], output_file)
+        write_chart_to_file(chart, output_file)
 
   delete_state_files()
 
