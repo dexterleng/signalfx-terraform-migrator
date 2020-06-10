@@ -16,10 +16,13 @@ def assert_item_type(item, _type):
 
 def idify_name(name):
   o = name.lower().strip()
-  o = re.sub("[^0-9a-zA-Z-_]+", "_", o)
+  o = re.sub("[^0-9a-zA-Z]+", "_", o)
+  o = re.sub("_+", "_", o)
+  o = o.strip('_')
 
   if o[0].isdigit():
     o = "_" + o
+
   return o
 
 
@@ -37,9 +40,9 @@ def map_chart_to_resource_type(chart):
 
 def insert_dashboard_attributes(dashboard):
   dashboard['_resource_type'] = 'signalfx_dashboard'
-  dashboard['_resource_id'] = idify_name(f"{DASHBOARD_GROUP_NAME}--{dashboard['sf_dashboard']}")
+  dashboard['_resource_id'] = f"{DASHBOARD_GROUP_NAME}--{idify_name(dashboard['sf_dashboard'])}"
   dashboard['_resource_type_id'] = f"{dashboard['_resource_type']}.{dashboard['_resource_id']}"
-  dashboard['_file_name'] = idify_name(f"{DASHBOARD_GROUP_NAME}_dashboard_group_{dashboard['sf_dashboard']}_dashboard")
+  dashboard['_file_name'] = f"{DASHBOARD_GROUP_NAME}_dashboard_group_{idify_name(dashboard['sf_dashboard'])}_dashboard"
 
 def insert_chart_attributes(chart, resource_id, dashboard):
   chart['_resource_type'] = map_chart_to_resource_type(chart)
@@ -198,6 +201,8 @@ def main():
 
   marshall_id_to_children_map = build_mid_to_children_map(all_dashboards + all_charts)
 
+  insert_dashboard_group_attributes(dashboard_group)
+
   # set dashboard attributes
   for dashboard in all_dashboards:
     dashboard_mid = dashboard['marshallId']
@@ -215,7 +220,7 @@ def main():
 
     for chart in marshall_id_to_children_map[dashboard_mid]:
       # prevent chart id collision by adding _{nth_appearance} suffix to resource_id
-      chart_name = idify_name(f"{dashboard['_resource_id']}--{chart['sf_chart']}")
+      chart_name = f"{dashboard['_resource_id']}--{idify_name(chart['sf_chart'])}"
       if chart_name not in chart_resource_id_count:
         chart_resource_id_count[chart_name] = 0
       chart_resource_id_count[chart_name] += 1
