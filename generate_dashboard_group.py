@@ -1,9 +1,9 @@
 import subprocess
 from shared import *
 
-DASHBOARD_GROUP_PATH = './internal_tools.json'
-DASHBOARD_GROUP_NAME='internal_tools'
-DB_GROUP_ID = 'C_X_h_xAcAA'
+DASHBOARD_GROUP_PATH = './kcp_group.json'
+DASHBOARD_GROUP_NAME='kcp'
+DB_GROUP_ID = 'DckjdoIAgAA'
 
 def read_items():
   items = load_items(DASHBOARD_GROUP_PATH)
@@ -24,7 +24,7 @@ def main():
 
   items, dashboard_group, all_dashboards, all_charts = read_items()
 
-  marshall_id_to_children_map = build_mid_to_children_map([dashboard_group] + all_dashboards + all_charts)
+  marshall_id_to_children_map = build_mid_to_children_map(all_dashboards + all_charts)
 
   insert_dashboard_group_attributes(dashboard_group)
   dashboard_group['_id'] = DB_GROUP_ID
