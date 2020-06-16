@@ -1,27 +1,48 @@
 # SignalFx Terraform Migrator
 
-A Python script for generating Terraform configuration from SignalFx dashboard group JSON exports.
+A Python script for generating Terraform configuration from SignalFx dashboard group and dashboard JSON exports.
 
 ## How to use
 
-### 1. Export a SignalFx dashboard group as JSON
+### Migrating a Dashboard Group
 
-![export as json](./docs/export_button.png)
+1. Export a SignalFx dashboard group as JSON
 
-### 2. Move JSON file to project directory
+![export as json](./docs/export_group_button.png)
 
-### 3. Set the following constants to their appropriate values
+2. Move JSON file to project directory
 
-`signalfx_export_path` - points to the JSON file
+3. Set the following constants to their appropriate values
+
+`DASHBOARD_GROUP_PATH` - points to the JSON file
 
 `DASHBOARD_GROUP_NAME` - the terraform name of the dashboard group. Only alphanumerics, dash, and underscore are allowed.
 
-`DB_GROUP_ID` - The ID of the dashboard group. Can be follow under the dashboard group's Info popup.
+`DB_GROUP_ID` - The ID of the dashboard group. Can be found under the dashboard group's Info popup.
 
+4. Start the generation with `python3 generate_dashboard_group.py`
 
-### 4. Start the generation with `python3 main.py`
+The newly generated terraform files are found in `{DASHBOARD_GROUP_NAME}/`.
 
-The newly generated terraform files are found in `output`.
+Move the files to your Terraform project.
+
+### Migrating a Dashboard
+
+1. Export a SignalFx dashboard as JSON
+
+![export as json](./docs/export_dashboard_button.png)
+
+2. Move JSON file to project directory
+
+3. Set the following constants to their appropriate values
+
+`DASHBOARD_PATH` - points to the JSON file
+
+`DASHBOARD_GROUP_NAME` - the terraform name of the dashboard group (purely for folder/file name generation). Only alphanumerics, dash, and underscore are allowed.
+
+4. Start the generation with `python3 generate_dashboard.py`
+
+The newly generated terraform files are found in `{DASHBOARD_GROUP_NAME}/`.
 
 Move the files to your Terraform project.
 
